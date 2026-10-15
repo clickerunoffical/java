@@ -28,8 +28,8 @@ public class CyberSecurityScanner {
         """;
 
     public static void main(String[] args) throws IOException {
-        int port = args.length > 0 ? Integer.parseInt(args[0]) : 8080;
-        HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
+        int port = args.length > 0 ? Integer.parseInt(args[0]) : Integer.parseInt(System.getenv().getOrDefault("PORT", "8080"));
+        HttpServer server = HttpServer.create(new InetSocketAddress("0.0.0.0", port), 0);
         server.createContext("/", CyberSecurityScanner::handle);
         server.setExecutor(null);
         server.start();
@@ -126,7 +126,7 @@ public class CyberSecurityScanner {
             case 4 -> "<div class=\"field\"><label for=\"file\">Choose a file</label><input id=\"file\" name=\"file\" type=\"file\" required></div>" + field("expected", "Expected SHA-256 (optional)", "Paste a trusted checksum to compare", v.getOrDefault("expected", ""), "File contents are read locally by this Java server and are not saved.");
             case 5 -> textarea("text", "Text to hash", "Enter text to create a SHA-256 digest", v.getOrDefault("text", ""), "SHA-256 is a one-way digest, not encryption.");
             case 6 -> "<div class=\"field\"><label for=\"action\">Operation</label><select id=\"action\" name=\"action\"><option value=\"encrypt\">Encrypt</option><option value=\"decrypt\">Decrypt</option></select></div>" + field("key", "Secret key", "Enter a passphrase", "", "Demo uses a SHA-256-derived AES key. Never use it for real secrets.") + textarea("text", "Text or Base64 ciphertext", "Enter text", v.getOrDefault("text", ""), "Encrypted output is Base64 encoded.");
-            case 8 -> field("url", "Website URL", "https://example.com", v.getOrDefault("url", ""), "Checks a URL you control by making a basic HTTP request from this Java server.");
+            case 8 -> textarea("headers", "Response headers", "Paste response header names and values from a website you control", v.getOrDefault("headers", ""), "Paste the response headers you want to review. This tool does not make network requests.");
             case 9 -> "<div class=\"field\"><label><input type=\"checkbox\" name=\"mfa\" value=\"yes\"> I use multi-factor authentication</label><label><input type=\"checkbox\" name=\"updates\" value=\"yes\"> I install security updates promptly</label><label><input type=\"checkbox\" name=\"unique\" value=\"yes\"> I use unique passwords with a password manager</label><label><input type=\"checkbox\" name=\"backup\" value=\"yes\"> I keep a separate backup of important files</label></div>";
             case 10 -> quizFields();
             default -> "<div class=\"field\"><label><input type=\"checkbox\" name=\"mfa\" value=\"yes\"> Multi-factor authentication is enabled</label><label><input type=\"checkbox\" name=\"limit\" value=\"yes\"> Login attempts are rate-limited</label><label><input type=\"checkbox\" name=\"hash\" value=\"yes\"> Passwords are stored using a password-hashing function</label><label><input type=\"checkbox\" name=\"reset\" value=\"yes\"> Password reset links expire and are single-use</label><label><input type=\"checkbox\" name=\"session\" value=\"yes\"> Sessions expire and cookies use Secure and HttpOnly flags</label></div>";
@@ -215,13 +215,14 @@ public class CyberSecurityScanner {
         return panel("Encryption complete", "<p class=\"mono\">" + Base64.getEncoder().encodeToString(packed) + "</p><p>Keep the passphrase safe; losing it prevents decryption.</p>", "");
     }
 
-    private static String headers(String input) throws Exception {
-        URI uri = URI.create(input.trim().contains("://") ? input.trim() : "https://" + input.trim()); if (uri.getHost() == null || !(uri.getScheme().equals("https") || uri.getScheme().equals("http"))) throw new IllegalArgumentException("Enter a valid HTTP or HTTPS website URL.");
-        var connection = uri.toURL().openConnection(); connection.setConnectTimeout(4000); connection.setReadTimeout(4000); connection.setRequestProperty("User-Agent", "CyberShield-Student-Project/1.0"); connection.connect();
+    private static String headers(String input) {
         List<String> found = new ArrayList<>(); List<String> missing = new ArrayList<>();
         String[] checks = {"Strict-Transport-Security", "Content-Security-Policy", "X-Content-Type-Options", "X-Frame-Options", "Referrer-Policy", "Permissions-Policy"};
-        for (String header : checks) { String value = connection.getHeaderField(header); if (value == null) missing.add(header); else found.add(header + ": " + value); }
-        return panel("Security header review", "<p>Response status: " + (connection instanceof java.net.HttpURLConnection h ? h.getResponseCode() : "connected") + "</p><p><b>Present</b></p>" + (found.isEmpty() ? "<p>None of the checked headers were present.</p>" : list(found)) + "<p><b>Missing from this response</b></p>" + list(missing) + "<p>Headers can vary by route and response; this is a basic check, not a full audit.</p>", missing.isEmpty() ? "" : "warn");
+        for (String header : checks) {
+            var matcher = Pattern.compile("(?im)^" + Pattern.quote(header) + "\\s*:").matcher(input);
+            if (matcher.find()) found.add(header); else missing.add(header);
+        }
+        return panel("Security header review", "<p><b>Present</b></p>" + (found.isEmpty() ? "<p>None of the checked headers were found.</p>" : list(found)) + "<p><b>Missing from the pasted headers</b></p>" + list(missing) + "<p>Headers can vary by route and response; this is a basic check, not a full audit.</p>", missing.isEmpty() ? "" : "warn");
     }
 
     private static String risk(Map<String, String> v) {
