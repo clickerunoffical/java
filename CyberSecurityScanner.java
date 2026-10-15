@@ -142,7 +142,7 @@ public class CyberSecurityScanner {
 
     private static String analyze(int i, Map<String, String> v) throws Exception {
         return switch (i) {
-            case 0, 7 -> scanUrl(v.get("url")); case 1 -> password(v.get("password")); case 2 -> phishing(v.get("message")); case 3 -> ip(v.get("ip")); case 4 -> fileHash(v); case 5 -> hash(v.get("text")); case 6 -> encrypt(v); case 8 -> headers(v.get("url")); case 9 -> risk(v); case 10 -> quiz(v); default -> login(v);
+            case 0, 7 -> scanUrl(v.get("url")); case 1 -> password(v.get("password")); case 2 -> phishing(v.get("message")); case 3 -> ip(v.get("ip")); case 4 -> fileHash(v); case 5 -> hash(v.get("text")); case 6 -> encrypt(v); case 8 -> headers(v.get("headers")); case 9 -> risk(v); case 10 -> quiz(v); default -> login(v);
         };
     }
 
@@ -157,8 +157,42 @@ public class CyberSecurityScanner {
         if (host.split("\\.").length > 5) issues.add("The domain contains many subdomains.");
         if (host.contains("@") || uri.getUserInfo() != null) issues.add("The URL contains user information, which can disguise the actual destination.");
         if (input.matches("(?i).*https?%3a.*") || input.matches("(?i).*%40.*")) issues.add("The URL contains encoded characters that can obscure its destination.");
-        if (issues.isEmpty()) issues.add("No basic URL pattern warnings found. This does not prove the site is trustworthy.");
-        return panel(issues.size() == 1 && issues.get(0).startsWith("No basic") ? "No obvious pattern found" : "Review this link carefully", "<p><b>Host:</b> <span class=\"mono\">" + esc(host) + "</span></p>" + list(issues), issues.size() == 1 && issues.get(0).startsWith("No basic") ? "" : "warn");
+        String normalizedHost = host.toLowerCase().replace('0', 'o').replace('1', 'l').replace('3', 'e').replace('5', 's').replace('7', 't');
+        String[] protectedDomains = {"amazon.com", "google.com", "facebook.com", "apple.com", "microsoft.com", "paypal.com", "netflix.com"};
+        for (String protectedDomain : protectedDomains) {
+            if (!host.equalsIgnoreCase(protectedDomain) && normalizedHost.equals(protectedDomain)) {
+                issues.add("The domain resembles " + protectedDomain + " with look-alike characters.");
+                break;
+            }
+            String hostDomain = registrable(host);
+            String targetDomain = registrable(protectedDomain);
+            if (!hostDomain.equals(targetDomain) && editDistance(hostDomain, targetDomain) <= 1) {
+                issues.add("The domain is very similar to the well-known " + protectedDomain + " domain.");
+                break;
+            }
+        }
+        boolean suspicious = !issues.isEmpty();
+        String resultTitle = suspicious ? "Potentially suspicious link" : "No obvious warning found — not verified safe";
+        if (!suspicious) issues.add("Basic checks found no common warning patterns. This tool does not check domain reputation, ownership, or live threats; do not treat this result as proof the site is safe.");
+        else issues.add("This is a basic Java heuristic, not a threat-intelligence or reputation check.");
+        return panel(resultTitle, "<p><b>Host:</b> <span class=\"mono\">" + esc(host) + "</span></p>" + list(issues), suspicious ? "warn" : "");
+    }
+
+    private static String registrable(String host) {
+        String[] labels = host.toLowerCase().split("\\.");
+        return labels.length >= 2 ? labels[labels.length - 2] + "." + labels[labels.length - 1] : host.toLowerCase();
+    }
+
+    private static int editDistance(String first, String second) {
+        int[] previous = new int[second.length() + 1];
+        for (int j = 0; j <= second.length(); j++) previous[j] = j;
+        for (int i = 1; i <= first.length(); i++) {
+            int[] current = new int[second.length() + 1];
+            current[0] = i;
+            for (int j = 1; j <= second.length(); j++) current[j] = Math.min(Math.min(current[j - 1] + 1, previous[j] + 1), previous[j - 1] + (first.charAt(i - 1) == second.charAt(j - 1) ? 0 : 1));
+            previous = current;
+        }
+        return previous[second.length()];
     }
 
     private static String password(String pass) {
